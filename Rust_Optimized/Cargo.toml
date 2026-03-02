@@ -62,6 +62,22 @@ mockito = "1.2"
 name = "raft_benchmark"
 harness = false
 
+[[bench]]
+name = "proxy_benchmark"
+harness = false
+
+[[bench]]
+name = "bank_benchmark"
+harness = false
+
+[[bench]]
+name = "security_benchmark"
+harness = false
+
+[[bench]]
+name = "integrated_benchmark"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
