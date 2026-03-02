@@ -47,14 +47,16 @@ impl BankSystem {
 
     /// 계좌 생성
     pub async fn create_account(&self, account_id: &str, initial_balance: i64) {
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);  // 시간 생성 실패 시 0 사용 (거의 발생하지 않음)
+
         let account = Account {
             id: account_id.to_string(),
             owner: format!("Owner of {}", account_id),
             balance: initial_balance,
-            created_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            created_at,
         };
 
         self.accounts.insert(account_id.to_string(), account);
@@ -98,15 +100,18 @@ impl BankSystem {
 
         // 거래 기록
         let tx_id = Uuid::new_v4().to_string();
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);  // 시간 생성 실패 시 0 사용
+
         let transaction = Transaction {
             tx_id: tx_id.clone(),
             from: from.to_string(),
             to: to.to_string(),
             amount,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            timestamp,
             status: "completed".to_string(),
         };
 
