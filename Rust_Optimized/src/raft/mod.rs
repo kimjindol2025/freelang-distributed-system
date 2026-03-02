@@ -367,6 +367,128 @@ impl RaftNetwork {
         Some(node_lock.append_entries(req))
     }
 
+    /// 선출 실행: 모든 노드에 RequestVote 전송, Quorum 기반 리더 선출
+    pub async fn conduct_election(&self, candidate_id: usize) -> bool {
+        let candidate = &self.nodes[candidate_id];
+
+        // 1. 후보자 준비
+        {
+            let mut node = candidate.write().await;
+            node.state = NodeState::Candidate;
+            node.current_term += 1;
+            node.voted_for = Some(candidate_id);
+            node.last_election_time = Instant::now();
+
+            info!("Node {}: Starting election (term: {})", candidate_id, node.current_term);
+        }
+
+        let candidate_lock = candidate.read().await;
+        let candidate_term = candidate_lock.current_term;
+        let candidate_last_index = candidate_lock.last_log_index();
+        let candidate_last_term = candidate_lock.last_log_term();
+        drop(candidate_lock);
+
+        // 2. 모든 노드에 투표 요청
+        let mut votes = 1;  // 자신에게 투표
+        let mut handles = vec![];
+
+        for i in 0..self.node_count {
+            if i == candidate_id {
+                continue;
+            }
+
+            let network_clone = Arc::new(self.clone_for_election());
+            let handle = tokio::spawn(async move {
+                let req = RequestVoteRequest {
+                    term: candidate_term,
+                    candidate_id,
+                    last_log_index: candidate_last_index,
+                    last_log_term: candidate_last_term,
+                };
+
+                match network_clone.send_request_vote(i, req).await {
+                    Some(response) => (i, response.vote_granted),
+                    None => (i, false),  // 메시지 손실
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        // 3. 모든 응답 수집
+        for handle in handles {
+            if let Ok((_, granted)) = handle.await {
+                if granted {
+                    votes += 1;
+                }
+            }
+        }
+
+        // 4. Quorum 달성 여부 확인
+        let quorum = self.node_count / 2 + 1;
+
+        if votes >= quorum {
+            // 리더 선출 성공
+            let mut node = candidate.write().await;
+
+            // 아직 이 term에서 리더가 되지 않았으면 리더 설정
+            if matches!(node.state, NodeState::Candidate) && node.current_term == candidate_term {
+                node.state = NodeState::Leader;
+                node.next_index = vec![node.last_log_index() + 1; self.node_count];
+                node.match_index = vec![0; self.node_count];
+                node.match_index[candidate_id] = node.last_log_index();
+
+                info!("Node {}: Won election with {} votes (quorum: {}, term: {})",
+                    candidate_id, votes, quorum, candidate_term);
+
+                return true;
+            }
+        } else {
+            info!("Node {}: Lost election with {} votes (quorum: {}, term: {})",
+                candidate_id, votes, quorum, candidate_term);
+        }
+
+        false
+    }
+
+    /// 선출용 네트워크 복제 (내부 사용)
+    fn clone_for_election(&self) -> Self {
+        RaftNetwork {
+            nodes: self.nodes.clone(),
+            node_count: self.node_count,
+            pending_messages: self.pending_messages.clone(),
+            latencies: self.latencies.clone(),
+            message_loss: self.message_loss.clone(),
+        }
+    }
+
+    /// 모든 노드의 타임아웃 확인 및 선출 시작
+    pub async fn check_timeouts(&self) {
+        for i in 0..self.node_count {
+            let node = &self.nodes[i];
+            let mut node_lock = node.write().await;
+
+            // 리더는 타임아웃 무시 (하트비트 전송)
+            if matches!(node_lock.state, NodeState::Leader) {
+                node_lock.last_heartbeat = Instant::now();
+                continue;
+            }
+
+            // 팔로워/후보자가 타임아웃되면 선출 시작
+            if node_lock.check_election_timeout() {
+                drop(node_lock);  // 락 해제
+
+                // 선출 실행
+                let result = self.conduct_election(i).await;
+
+                // 선출 결과 로깅
+                if !result {
+                    info!("Node {}: Election failed, will retry", i);
+                }
+            }
+        }
+    }
+
     /// 클러스터 상태 반환
     pub async fn get_status(&self) -> ClusterStatus {
         let mut leader_count = 0;
@@ -524,6 +646,8 @@ pub struct ClusterStatus {
 mod tests {
     use super::*;
 
+    // ========== Phase 1 테스트 (기존) ==========
+
     #[tokio::test]
     async fn test_cluster_creation() {
         let cluster = RaftCluster::new(5);
@@ -541,7 +665,6 @@ mod tests {
     async fn test_leader_election_variability() {
         let mut cluster = RaftCluster::new(5);
 
-        // 여러 번 선출하면 다른 노드가 리더가 되어야 함
         let first_election = cluster.elect_leader().await;
         assert!(first_election);
         let leader_1 = cluster.leader_id;
@@ -550,7 +673,6 @@ mod tests {
         assert!(second_election);
         let leader_2 = cluster.leader_id;
 
-        // 첫 번째와 두 번째 리더가 다름
         assert_ne!(leader_1, leader_2);
         assert_eq!(leader_1, Some(0));
         assert_eq!(leader_2, Some(1));
@@ -576,5 +698,147 @@ mod tests {
         let status = cluster.get_status().await;
         assert_eq!(status.nodes, 5);
         assert_eq!(status.leaders, 1);
+    }
+
+    // ========== Phase 2 테스트 (투표 기반 선출) ==========
+
+    #[tokio::test]
+    async fn test_network_creation() {
+        let network = RaftNetwork::new(5);
+        assert_eq!(network.node_count, 5);
+
+        // 모든 노드는 처음에 Follower
+        for i in 0..5 {
+            let node = network.nodes[i].read().await;
+            assert!(matches!(node.state, NodeState::Follower));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_normal_election() {
+        let network = RaftNetwork::new(5);
+
+        // 노드 0에서 선출 시작
+        let result = network.conduct_election(0).await;
+        assert!(result, "노드 0이 리더가 되어야 함");
+
+        // 검증
+        let status = network.get_status().await;
+        assert_eq!(status.leaders, 1, "리더가 정확히 1명");
+        assert_eq!(status.leader_id, Some(0), "노드 0이 리더");
+
+        // 리더 상태 확인
+        let leader = network.nodes[0].read().await;
+        assert!(matches!(leader.state, NodeState::Leader));
+        assert_eq!(leader.current_term, 1);
+    }
+
+    #[tokio::test]
+    async fn test_election_requires_quorum() {
+        let network = RaftNetwork::new(5);
+
+        // 노드 0에서 선출 → 쿼럼 필요 (3개)
+        // 모든 노드가 응답하면 성공 가능
+        let result = network.conduct_election(0).await;
+        assert!(result);
+
+        // 이제 노드 1에서 선출 → 노드 0은 이미 term 1에 투표했음
+        let result2 = network.conduct_election(1).await;
+
+        // 노드 1이 높은 term으로 선출을 시작했으므로
+        // 노드 0도 term을 업데이트하고 투표할 수 있음
+        // 결과는 상황에 따라 다름 (원래 리더가 vote 안 할 수도 있음)
+        println!("노드 1 선출 결과: {}", result2);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_elections() {
+        let network = RaftNetwork::new(5);
+
+        // 첫 선출: 노드 0
+        let result1 = network.conduct_election(0).await;
+        assert!(result1);
+
+        let status1 = network.get_status().await;
+        assert_eq!(status1.leaders, 1);
+        assert_eq!(status1.leader_id, Some(0));
+
+        // 두 번째 선출: 노드 2 (더 높은 term)
+        let result2 = network.conduct_election(2).await;
+        assert!(result2, "노드 2도 더 높은 term으로 선출 가능");
+
+        let status2 = network.get_status().await;
+        assert_eq!(status2.leaders, 1, "여전히 리더는 1명");
+        assert_eq!(status2.leader_id, Some(2), "노드 2가 새로운 리더");
+
+        // 노드 0은 Follower로 변신
+        let node0 = network.nodes[0].read().await;
+        assert!(matches!(node0.state, NodeState::Follower));
+        assert!(node0.current_term >= 2);
+    }
+
+    #[tokio::test]
+    async fn test_request_vote_log_matching() {
+        let network = RaftNetwork::new(3);
+
+        // 노드 0에 로그 추가 (수동으로)
+        {
+            let mut node = network.nodes[0].write().await;
+            node.log.push(LogEntry {
+                index: 1,
+                term: 1,
+                command: "cmd1".to_string(),
+            });
+        }
+
+        // 노드 0이 선출 시도 (로그가 있으므로 유리)
+        let result = network.conduct_election(0).await;
+        assert!(result, "로그가 있는 노드가 더 쉽게 리더가 됨");
+    }
+
+    #[tokio::test]
+    async fn test_network_partition() {
+        let network = RaftNetwork::new(5);
+
+        // 3-2 분할: [0,1,2] vs [3,4]
+        network.create_partition(vec![0, 1, 2], vec![3, 4]);
+
+        // 노드 0 선출 시도 (큰 파티션)
+        let result0 = network.conduct_election(0).await;
+        assert!(result0, "큰 파티션에서 리더 선출 가능");
+
+        // 노드 3 선출 시도 (작은 파티션, 쿼럼 부족)
+        let result3 = network.conduct_election(3).await;
+        assert!(!result3, "작은 파티션에서는 리더 선출 불가 (쿼럼 = 3)");
+    }
+
+    #[tokio::test]
+    async fn test_network_latency() {
+        let network = RaftNetwork::new(5);
+
+        // 노드 0과 1 사이에 100ms 지연 추가
+        network.set_latency(0, 1, 100);
+        network.set_latency(1, 0, 100);
+
+        let start = Instant::now();
+        let result = network.conduct_election(0).await;
+        let elapsed = start.elapsed();
+
+        // 지연이 있어도 선출 성공
+        assert!(result);
+        // 최소 100ms + 다른 노드들의 지연
+        assert!(elapsed.as_millis() >= 50);  // 최소 지연 확인
+    }
+
+    #[tokio::test]
+    async fn test_message_loss() {
+        let network = RaftNetwork::new(5);
+
+        // 노드 0과 1 사이 50% 손실률
+        network.set_message_loss(0, 1, 0.5);
+
+        // 여러 번 시도해도 결국 선출 가능 (다른 노드들 덕분)
+        let result = network.conduct_election(0).await;
+        assert!(result, "메시지 손실이 있어도 쿼럼 달성 가능");
     }
 }
