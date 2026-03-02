@@ -707,6 +707,12 @@ impl RaftCluster {
                 log: Vec::new(),
                 commit_index: 0,
                 last_applied: 0,
+                next_index: vec![1; node_count],
+                match_index: vec![0; node_count],
+                election_timeout_ms: 150,
+                heartbeat_interval_ms: 50,
+                last_heartbeat: Instant::now(),
+                last_election_time: Instant::now(),
             };
             nodes.push(Arc::new(RwLock::new(node)));
         }

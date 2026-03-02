@@ -18,7 +18,7 @@ mod supply_chain;    // Phase J: Supply Chain Security
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{info, warn, error};
 use security::{SecurityConfig, SecurityManager};
 
 #[tokio::main]
