@@ -12,9 +12,10 @@ mod raft;
 mod proxy;
 mod bank;
 mod security;
-mod tracing;         // Phase H: Observability - Distributed Tracing
-mod chaos;           // Phase I: Chaos Engineering - Resilience Testing
-mod supply_chain;    // Phase J: Supply Chain Security
+mod tracing;              // Phase H: Observability - Distributed Tracing
+mod chaos;                // Phase I: Chaos Engineering - Resilience Testing
+mod chaos_engineering;    // Phase III: Chaos Engineering - 10-step framework
+mod supply_chain;         // Phase J: Supply Chain Security
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
