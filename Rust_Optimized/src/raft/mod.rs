@@ -775,20 +775,15 @@ impl RaftCluster {
         }
     }
 
-    /// 리더 카운트 반환
+    /// 리더 카운트 반환 (현재 선출된 리더가 있으면 1, 없으면 0)
     pub fn get_leader_count(&self) -> usize {
-        let mut count = 0;
-
-        for node in &self.nodes {
-            // 동기화되지 않은 접근 (성능)
-            // 실제로는 RwLock으로 보호되어야 함
-        }
-
+        // 안전한 방식: leader_id로 판단
+        // (동기화된 노드 상태 확인이 필요한 경우 async 메서드 사용)
         if self.leader_id.is_some() {
-            count = 1;
+            1
+        } else {
+            0
         }
-
-        count
     }
 
     /// 클러스터 상태 반환
@@ -1697,27 +1692,23 @@ mod tests {
     #[tokio::test]
     async fn test_election_safety() {
         // 선출 안전성: 한 번에 최대 1개의 리더만 가능
-        let network = RaftNetwork::new(3);
+        let network = Arc::new(RaftNetwork::new(3));
 
         info!("\n=== Election Safety Test ===");
 
         // 여러 노드에서 동시에 선출 시도
-        let handle1 = tokio::spawn({
-            let net = Arc::new(network.clone_for_election());
-            async move {
-                net.conduct_election(0).await
-            }
+        let net_clone1 = Arc::clone(&network);
+        let handle1 = tokio::spawn(async move {
+            net_clone1.conduct_election(0).await
         });
 
-        let handle2 = tokio::spawn({
-            let net = Arc::new(network.clone_for_election());
-            async move {
-                net.conduct_election(1).await
-            }
+        let net_clone2 = Arc::clone(&network);
+        let handle2 = tokio::spawn(async move {
+            net_clone2.conduct_election(1).await
         });
 
-        // 잠시 대기 후 결과 확인
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // 핸들이 완료될 때까지 대기
+        let _ = tokio::join!(handle1, handle2);
 
         // 최종적으로 1개의 리더만 존재해야 함
         let mut leader_count = 0;
