@@ -13,6 +13,7 @@ mod proxy;
 mod bank;
 mod security;
 mod tracing;  // Phase H: Observability - Distributed Tracing
+mod chaos;    // Phase I: Chaos Engineering - Resilience Testing
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -61,8 +62,12 @@ async fn main() {
     info!("\n🔐 Running Security Tests...");
     run_security_tests(&security_manager).await;
 
+    // 카오스 엔지니어링 테스트
+    info!("\n⚡ Running Chaos Engineering Tests...");
+    run_chaos_tests().await;
+
     info!("\n🎉 All systems operational!");
-    info!("Status: 🚀 Production Ready (Phase B-E)");
+    info!("Status: 🚀 Production Ready (Phase B-I)");
 }
 
 /// 보안 관리자 초기화
@@ -250,4 +255,27 @@ async fn run_security_tests(security_manager: &Arc<SecurityManager>) {
     }
 
     info!("  ✅ All security tests completed");
+}
+
+/// Test 6: 카오스 엔지니어링 (Resilience & Failure Handling)
+async fn run_chaos_tests() {
+    info!("Scenario 6: Chaos Engineering Tests");
+
+    let mut suite = chaos::ChaosTestSuite::new();
+
+    info!("  Running all 7 chaos scenarios...");
+    let suite_result = suite.run_all_scenarios().await;
+
+    // 최종 리포트 생성
+    let report = suite.generate_final_report(&suite_result);
+    println!("{}", report);
+
+    // 결과 요약
+    if suite_result.success_rate == 100.0 {
+        info!("  ✅ All chaos tests passed!");
+        info!("  ✅ System resilience verified");
+    } else {
+        warn!("  ⚠️  {} chaos tests failed", suite_result.failed_tests);
+        warn!("  Review failures before production deployment");
+    }
 }
