@@ -489,6 +489,179 @@ impl RaftNetwork {
         }
     }
 
+    /// 로그 복제: 리더가 팔로워에게 로그 전송 (RFC 5740 §5.3)
+    pub async fn replicate_log(&self, leader_id: usize) {
+        let leader = &self.nodes[leader_id];
+
+        // 리더만 로그 복제 가능
+        let leader_lock = leader.read().await;
+        if !matches!(leader_lock.state, NodeState::Leader) {
+            return;
+        }
+
+        let leader_term = leader_lock.current_term;
+        let leader_commit = leader_lock.commit_index;
+        let log = leader_lock.log.clone();
+        let next_index = leader_lock.next_index.clone();
+        let match_index = leader_lock.match_index.clone();
+
+        drop(leader_lock);
+
+        // 각 팔로워에게 로그 전송
+        let mut handles = vec![];
+
+        for follower_id in 0..self.node_count {
+            if follower_id == leader_id {
+                continue;
+            }
+
+            let network_clone = Arc::new(self.clone_for_election());
+            let log_clone = log.clone();
+            let next_idx = next_index[follower_id];
+
+            let handle = tokio::spawn(async move {
+                // prev_log 정보 계산
+                let prev_index = next_idx - 1;
+                let prev_term = if prev_index > 0 && (prev_index as usize) <= log_clone.len() {
+                    log_clone[(prev_index - 1) as usize].term
+                } else if prev_index == 0 {
+                    0
+                } else {
+                    return (follower_id, false);  // 로그 부족
+                };
+
+                // 복제할 엔트리
+                let entries: Vec<LogEntry> = log_clone[(next_idx as usize - 1)..]
+                    .iter()
+                    .cloned()
+                    .collect();
+
+                let req = AppendEntriesRequest {
+                    term: leader_term,
+                    leader_id,
+                    prev_log_index: prev_index,
+                    prev_log_term: prev_term,
+                    entries,
+                    leader_commit,
+                };
+
+                // RPC 전송
+                match network_clone.send_append_entries(follower_id, req).await {
+                    Some(response) => (follower_id, response.success),
+                    None => (follower_id, false),  // 메시지 손실
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        // 모든 응답 처리
+        for handle in handles {
+            if let Ok((follower_id, success)) = handle.await {
+                self.handle_append_entries_response(leader_id, follower_id, success).await;
+            }
+        }
+    }
+
+    /// AppendEntries 응답 처리
+    async fn handle_append_entries_response(&self, leader_id: usize, follower_id: usize, success: bool) {
+        let leader = &self.nodes[leader_id];
+        let mut leader_lock = leader.write().await;
+
+        // 리더 확인
+        if !matches!(leader_lock.state, NodeState::Leader) {
+            return;
+        }
+
+        if success {
+            // 복제 성공: next_index와 match_index 업데이트
+            leader_lock.match_index[follower_id] = leader_lock.log.len() as u64;
+            leader_lock.next_index[follower_id] = leader_lock.log.len() as u64 + 1;
+
+            info!("Node {}: Replicated to follower {} (match_index: {})",
+                leader_id, follower_id, leader_lock.match_index[follower_id]);
+        } else {
+            // 복제 실패: next_index 감소 (로그 불일치)
+            if leader_lock.next_index[follower_id] > 1 {
+                leader_lock.next_index[follower_id] -= 1;
+            }
+
+            info!("Node {}: Replication failed for follower {}, will retry (next_index: {})",
+                leader_id, follower_id, leader_lock.next_index[follower_id]);
+        }
+
+        // Commit Index 업데이트
+        self.update_commit_index(leader_id, &leader_lock).await;
+    }
+
+    /// Commit Index 업데이트 (RFC 5740 §5.3, 5.4.2)
+    async fn update_commit_index(&self, leader_id: usize, leader: &RaftNode) {
+        if !matches!(leader.state, NodeState::Leader) {
+            return;
+        }
+
+        // match_index 정렬
+        let mut sorted_match = leader.match_index.clone();
+        sorted_match.sort();
+
+        // 중간값 계산 (n/2 위치)
+        let median_index = sorted_match[self.node_count / 2];
+
+        // 새로운 커밋 인덱스 계산
+        // (중간값 이상이면서 현재 term의 엔트리만 커밋 가능)
+        let mut new_commit_index = leader.commit_index;
+
+        for idx in (leader.commit_index + 1)..=median_index {
+            if (idx as usize) <= leader.log.len() {
+                let entry = &leader.log[(idx - 1) as usize];
+                if entry.term == leader.current_term {
+                    new_commit_index = idx;
+                }
+            }
+        }
+
+        if new_commit_index > leader.commit_index {
+            info!("Node {}: Updated commit_index from {} to {}",
+                leader_id, leader.commit_index, new_commit_index);
+        }
+    }
+
+    /// 하트비트 전송 (로그 없이 AppendEntries 전송)
+    pub async fn send_heartbeat(&self, leader_id: usize) {
+        let leader = &self.nodes[leader_id];
+        let leader_lock = leader.read().await;
+
+        if !matches!(leader_lock.state, NodeState::Leader) {
+            return;
+        }
+
+        let leader_term = leader_lock.current_term;
+        let leader_commit = leader_lock.commit_index;
+
+        drop(leader_lock);
+
+        // 모든 팔로워에게 하트비트 전송
+        for follower_id in 0..self.node_count {
+            if follower_id == leader_id {
+                continue;
+            }
+
+            let req = AppendEntriesRequest {
+                term: leader_term,
+                leader_id,
+                prev_log_index: 0,
+                prev_log_term: 0,
+                entries: vec![],  // 하트비트 (엔트리 없음)
+                leader_commit,
+            };
+
+            let network_clone = Arc::new(self.clone_for_election());
+            tokio::spawn(async move {
+                let _ = network_clone.send_append_entries(follower_id, req).await;
+            });
+        }
+    }
+
     /// 클러스터 상태 반환
     pub async fn get_status(&self) -> ClusterStatus {
         let mut leader_count = 0;
@@ -840,5 +1013,175 @@ mod tests {
         // 여러 번 시도해도 결국 선출 가능 (다른 노드들 덕분)
         let result = network.conduct_election(0).await;
         assert!(result, "메시지 손실이 있어도 쿼럼 달성 가능");
+    }
+
+    // ========== Phase 2 Step 3 테스트 (로그 복제) ==========
+
+    #[tokio::test]
+    async fn test_log_replication() {
+        let network = RaftNetwork::new(5);
+
+        // 1. 리더 선출
+        let result = network.conduct_election(0).await;
+        assert!(result, "노드 0 리더 선출");
+
+        // 2. 리더에 로그 추가
+        {
+            let mut leader = network.nodes[0].write().await;
+            leader.log.push(LogEntry {
+                index: 1,
+                term: 1,
+                command: "cmd1".to_string(),
+            });
+        }
+
+        // 3. 로그 복제 실행
+        network.replicate_log(0).await;
+
+        // 4. 복제 확인
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        for i in 1..5 {
+            let follower = network.nodes[i].read().await;
+            assert!(!follower.log.is_empty(), "팔로워 {}에 로그 복제됨", i);
+            assert_eq!(follower.log.len(), 1, "팔로워 {}의 로그 길이", i);
+            assert_eq!(follower.log[0].command, "cmd1", "팔로워 {}의 로그 내용", i);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multiple_log_entries() {
+        let network = RaftNetwork::new(3);
+
+        // 리더 선출
+        let result = network.conduct_election(0).await;
+        assert!(result);
+
+        // 여러 엔트리 추가
+        {
+            let mut leader = network.nodes[0].write().await;
+            for i in 1..=5 {
+                leader.log.push(LogEntry {
+                    index: i,
+                    term: 1,
+                    command: format!("cmd{}", i),
+                });
+            }
+        }
+
+        // 로그 복제
+        network.replicate_log(0).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // 검증: 모든 팔로워가 5개 엔트리 보유
+        for i in 1..3 {
+            let follower = network.nodes[i].read().await;
+            assert_eq!(follower.log.len(), 5, "팔로워 {}의 로그 길이", i);
+
+            // 각 엔트리 내용 확인
+            for (idx, entry) in follower.log.iter().enumerate() {
+                assert_eq!(entry.command, format!("cmd{}", idx + 1));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_log_consistency() {
+        let network = RaftNetwork::new(5);
+
+        // 리더 선출
+        network.conduct_election(0).await;
+
+        // 리더에 엔트리 추가
+        {
+            let mut leader = network.nodes[0].write().await;
+            leader.log.push(LogEntry {
+                index: 1,
+                term: 1,
+                command: "entry1".to_string(),
+            });
+            leader.log.push(LogEntry {
+                index: 2,
+                term: 1,
+                command: "entry2".to_string(),
+            });
+        }
+
+        // 복제
+        network.replicate_log(0).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // 모든 노드의 로그가 일치하는지 확인
+        let leader = network.nodes[0].read().await;
+        let leader_log = leader.log.clone();
+        drop(leader);
+
+        for i in 1..5 {
+            let node = network.nodes[i].read().await;
+            assert_eq!(node.log.len(), leader_log.len(), "노드 {}의 로그 길이", i);
+
+            for (idx, entry) in node.log.iter().enumerate() {
+                assert_eq!(entry.command, leader_log[idx].command, "노드 {} 엔트리 {}", i, idx);
+                assert_eq!(entry.term, leader_log[idx].term, "노드 {} 엔트리 {} term", i, idx);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_leader_with_network_latency() {
+        let network = RaftNetwork::new(3);
+
+        // 리더 선출
+        network.conduct_election(0).await;
+
+        // 100ms 지연 추가
+        network.set_latency(0, 1, 100);
+        network.set_latency(0, 2, 50);
+
+        // 로그 추가
+        {
+            let mut leader = network.nodes[0].write().await;
+            leader.log.push(LogEntry {
+                index: 1,
+                term: 1,
+                command: "delayed_entry".to_string(),
+            });
+        }
+
+        // 로그 복제
+        let start = Instant::now();
+        network.replicate_log(0).await;
+        let elapsed = start.elapsed();
+
+        // 지연이 있어도 복제 완료 (최소 100ms)
+        assert!(elapsed.as_millis() >= 50, "최소 지연 시간 확인");
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // 모든 팔로워가 로그 수신
+        for i in 1..3 {
+            let follower = network.nodes[i].read().await;
+            assert_eq!(follower.log.len(), 1, "팔로워 {}의 로그 복제", i);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_heartbeat() {
+        let network = RaftNetwork::new(3);
+
+        // 리더 선출
+        network.conduct_election(0).await;
+
+        // 하트비트 전송
+        network.send_heartbeat(0).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // 팔로워의 last_heartbeat가 업데이트됨
+        for i in 1..3 {
+            let follower = network.nodes[i].read().await;
+            let elapsed = follower.last_heartbeat.elapsed().as_millis();
+            // 50ms 이내에 하트비트 수신
+            assert!(elapsed < 100, "팔로워 {}가 하트비트 수신", i);
+        }
     }
 }
