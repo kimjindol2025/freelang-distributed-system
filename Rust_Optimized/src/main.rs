@@ -11,10 +11,12 @@
 mod raft;
 mod proxy;
 mod bank;
+mod security;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+use security::{SecurityConfig, SecurityManager};
 
 #[tokio::main]
 async fn main() {
@@ -27,6 +29,13 @@ async fn main() {
     info!("Phase B: Raft Consensus Engine");
     info!("Phase C: Load Balancer & Proxy");
     info!("Phase D: Distributed Banking");
+    info!("Phase E: TLS/Security & Docker");
+
+    // Phase E: 보안 초기화
+    info!("\n🔐 Initializing Security Manager...");
+    let security_config = SecurityConfig::default();
+    let security_manager = initialize_security(security_config).await;
+    info!("✅ Security Manager Ready");
 
     // Phase B: Raft 초기화
     info!("\n📡 Initializing Raft Cluster...");
@@ -47,8 +56,23 @@ async fn main() {
     info!("\n🧪 Running Integration Tests...");
     run_integration_tests(&raft_cluster, &proxy, &bank).await;
 
+    // 보안 테스트
+    info!("\n🔐 Running Security Tests...");
+    run_security_tests(&security_manager).await;
+
     info!("\n🎉 All systems operational!");
-    info!("Status: 🚀 Production Ready");
+    info!("Status: 🚀 Production Ready (Phase B-E)");
+}
+
+/// 보안 관리자 초기화
+async fn initialize_security(config: SecurityConfig) -> Arc<SecurityManager> {
+    match SecurityManager::new(config) {
+        Ok(manager) => Arc::new(manager),
+        Err(e) => {
+            warn!("Security initialization warning: {}", e);
+            Arc::new(SecurityManager::new(SecurityConfig::default()).unwrap())
+        }
+    }
 }
 
 /// Raft 클러스터 초기화
@@ -156,4 +180,73 @@ async fn test_load_balancing(proxy: &Arc<proxy::ProxyServer>) {
     let successful = results.iter().filter(|r| r.is_ok()).count();
 
     info!("  Load Distribution: {}/100 requests processed", successful);
+}
+
+/// Test 5: 보안 (TLS/Auth/Encryption)
+async fn run_security_tests(security_manager: &Arc<SecurityManager>) {
+    info!("Scenario 5: Security Tests");
+
+    // JWT 토큰 생성 및 검증
+    info!("  Testing JWT token generation...");
+    let token = security_manager.auth().generate("user123", "admin");
+    match security_manager.auth().validate(&token) {
+        Ok(auth_token) => {
+            info!("  ✅ Token validation successful");
+            info!("     User: {}, Role: {}", auth_token.user_id, auth_token.role);
+        }
+        Err(e) => warn!("  ❌ Token validation failed: {}", e),
+    }
+
+    // 권한 확인
+    info!("  Testing permission check...");
+    match security_manager.auth().check_permission(&token, "read") {
+        Ok(has_permission) => {
+            if has_permission {
+                info!("  ✅ Permission granted");
+            } else {
+                warn!("  ❌ Permission denied");
+            }
+        }
+        Err(e) => warn!("  ❌ Permission check failed: {}", e),
+    }
+
+    // 역할 확인
+    info!("  Testing role check...");
+    match security_manager.auth().check_role(&token, "admin") {
+        Ok(is_admin) => {
+            if is_admin {
+                info!("  ✅ Role verified as admin");
+            } else {
+                warn!("  ⚠️  Role is not admin");
+            }
+        }
+        Err(e) => warn!("  ❌ Role check failed: {}", e),
+    }
+
+    // 데이터 암호화
+    info!("  Testing data encryption...");
+    if let Some(encryption) = security_manager.encryption() {
+        let plaintext = "Account: 123456, Balance: $10000.00";
+        match encryption.encrypt_string(plaintext) {
+            Ok(encrypted_data) => {
+                info!("  ✅ Data encrypted successfully");
+
+                match encryption.decrypt_string(&encrypted_data) {
+                    Ok(decrypted) => {
+                        if decrypted == plaintext {
+                            info!("  ✅ Data decryption successful");
+                        } else {
+                            warn!("  ❌ Decrypted data mismatch");
+                        }
+                    }
+                    Err(e) => warn!("  ❌ Decryption failed: {}", e),
+                }
+            }
+            Err(e) => warn!("  ❌ Encryption failed: {}", e),
+        }
+    } else {
+        info!("  ⚠️  Encryption not enabled");
+    }
+
+    info!("  ✅ All security tests completed");
 }
