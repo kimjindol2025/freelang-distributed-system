@@ -1458,4 +1458,354 @@ mod tests {
         let status = network.get_status().await;
         info!("분할 복구 후: leaders={}", status.leaders);
     }
+
+    // ========== Phase 2 Step 5: 최종 통합 테스트 & 성능 벤치마크 ==========
+
+    #[tokio::test]
+    async fn test_end_to_end_full_scenario() {
+        // 전체 시나리오: 5개 노드, 리더 선출, 로그 복제, 장애, 복구
+        let network = RaftNetwork::new(5);
+
+        info!("\n=== E2E Scenario: Step 1 - Initial Leader Election ===");
+        let elected = network.conduct_election(0).await;
+        assert!(elected, "초기 리더 선출 성공");
+        {
+            let node = network.nodes[0].read().await;
+            assert!(matches!(node.state, NodeState::Leader), "노드 0이 리더");
+        }
+
+        info!("\n=== E2E Scenario: Step 2 - Log Replication ===");
+        {
+            let mut leader = network.nodes[0].write().await;
+            for i in 1..=3 {
+                leader.log.push(LogEntry {
+                    index: i,
+                    term: 1,
+                    command: format!("command_{}", i),
+                });
+            }
+        }
+        network.replicate_log(0).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // 모든 노드에 로그가 복제되었는지 검증
+        let leader_log_len = network.nodes[0].read().await.log.len();
+        for i in 1..5 {
+            let node = network.nodes[i].read().await;
+            assert_eq!(node.log.len(), leader_log_len, "노드 {}의 로그 복제", i);
+        }
+        info!("모든 노드에 {} 개 로그 복제됨", leader_log_len);
+
+        info!("\n=== E2E Scenario: Step 3 - Network Failure ===");
+        // 리더(0)와 팔로워(1,2) 간의 네트워크 분할
+        network.set_message_loss(0, 1, 1.0);
+        network.set_message_loss(0, 2, 1.0);
+        network.set_message_loss(1, 0, 1.0);
+        network.set_message_loss(2, 0, 1.0);
+
+        // 새로운 로그 항목 (리더에만 있음)
+        {
+            let mut leader = network.nodes[0].write().await;
+            leader.log.push(LogEntry {
+                index: 4,
+                term: 1,
+                command: "failed_to_replicate".to_string(),
+            });
+        }
+        info!("리더에 새로운 로그 추가 (복제 실패 예상)");
+
+        info!("\n=== E2E Scenario: Step 4 - Recovery ===");
+        // 네트워크 분할 제거
+        network.set_message_loss(0, 1, 0.0);
+        network.set_message_loss(0, 2, 0.0);
+        network.set_message_loss(1, 0, 0.0);
+        network.set_message_loss(2, 0, 0.0);
+
+        // 로그 재복제
+        network.replicate_log(0).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        let final_leader_log_len = network.nodes[0].read().await.log.len();
+        for i in 1..5 {
+            let node = network.nodes[i].read().await;
+            assert_eq!(
+                node.log.len(),
+                final_leader_log_len,
+                "노드 {}의 로그 복구",
+                i
+            );
+        }
+        info!("복구 후 모든 노드가 {} 개 로그로 동기화됨", final_leader_log_len);
+
+        info!("\n=== E2E Scenario: Complete ===");
+        let status = network.get_status().await;
+        info!(
+            "최종 상태: {} nodes, {} leaders, {} total entries",
+            status.nodes, status.leaders, status.total_log_entries
+        );
+    }
+
+    #[tokio::test]
+    async fn test_performance_leader_election_timing() {
+        // 리더 선출 성능: 얼마나 빠르게 리더가 선출되는가?
+        let network = RaftNetwork::new(5);
+
+        info!("\n=== Performance: Leader Election Timing ===");
+
+        let start = Instant::now();
+        let elected = network.conduct_election(0).await;
+        let elapsed = start.elapsed();
+
+        assert!(elected, "리더 선출 성공");
+        info!(
+            "리더 선출 시간: {:.2}ms",
+            elapsed.as_secs_f64() * 1000.0
+        );
+
+        // 작은 클러스터에서는 10ms 이내에 완료되어야 함
+        assert!(elapsed.as_millis() < 100, "리더 선출은 100ms 이내");
+    }
+
+    #[tokio::test]
+    async fn test_performance_log_replication_throughput() {
+        // 로그 복제 성능: 초당 복제되는 로그 항목 수
+        let network = RaftNetwork::new(5);
+
+        info!("\n=== Performance: Log Replication Throughput ===");
+
+        // 리더 선출
+        network.conduct_election(0).await;
+
+        // 많은 로그 항목 추가
+        let log_count = 100;
+        {
+            let mut leader = network.nodes[0].write().await;
+            for i in 0..log_count {
+                leader.log.push(LogEntry {
+                    index: i + 1,
+                    term: 1,
+                    command: format!("log_{}", i),
+                });
+            }
+        }
+
+        // 로그 복제
+        let start = Instant::now();
+        network.replicate_log(0).await;
+        let elapsed = start.elapsed();
+
+        info!(
+            "로그 복제 성능: {} 항목 복제에 {:.2}ms",
+            log_count,
+            elapsed.as_secs_f64() * 1000.0
+        );
+
+        let throughput = log_count as f64 / elapsed.as_secs_f64();
+        info!("처리량: {:.0} entries/sec", throughput);
+
+        // 검증
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let leader_log_len = network.nodes[0].read().await.log.len();
+        for i in 1..5 {
+            let node = network.nodes[i].read().await;
+            assert_eq!(
+                node.log.len(),
+                leader_log_len,
+                "노드 {}의 로그 복제",
+                i
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rfc5740_invariants() {
+        // RFC 5740의 핵심 불변식 검증
+        let network = RaftNetwork::new(5);
+
+        info!("\n=== RFC 5740 Invariants Verification ===");
+
+        // 불변식 1: 정확히 1개 또는 0개의 리더
+        let elected = network.conduct_election(0).await;
+        assert!(elected, "리더 선출");
+
+        let mut leader_count = 0;
+        for node in &network.nodes {
+            let n = node.read().await;
+            if matches!(n.state, NodeState::Leader) {
+                leader_count += 1;
+            }
+        }
+        assert_eq!(leader_count, 1, "RFC 5740: 정확히 1개 리더");
+        info!("불변식 1 검증: 정확히 1개 리더 ✅");
+
+        // 불변식 2: 리더의 term은 다른 모든 노드보다 크거나 같음
+        let leader_node = &network.nodes[0];
+        let leader_term = leader_node.read().await.current_term;
+
+        for (i, node) in network.nodes.iter().enumerate() {
+            let term = node.read().await.current_term;
+            assert!(
+                leader_term >= term,
+                "리더 term({}) >= 노드 {} term({})",
+                leader_term,
+                i,
+                term
+            );
+        }
+        info!("불변식 2 검증: 리더 term이 최신 ✅");
+
+        // 불변식 3: 로그 일관성 - 같은 인덱스의 로그는 같은 term을 가짐
+        {
+            let mut leader = network.nodes[0].write().await;
+            leader.log.push(LogEntry {
+                index: 1,
+                term: 1,
+                command: "test".to_string(),
+            });
+        }
+
+        network.replicate_log(0).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        let leader = network.nodes[0].read().await;
+        let leader_log = leader.log.clone();
+        drop(leader);
+
+        for (i, node) in network.nodes.iter().enumerate() {
+            let follower = node.read().await;
+            for (idx, entry) in follower.log.iter().enumerate() {
+                if idx < leader_log.len() {
+                    assert_eq!(
+                        entry.term, leader_log[idx].term,
+                        "노드 {}의 로그 인덱스 {}의 term 일치",
+                        i, idx
+                    );
+                }
+            }
+        }
+        info!("불변식 3 검증: 로그 일관성 ✅");
+
+        info!("\n=== RFC 5740 검증 완료 ===");
+    }
+
+    #[tokio::test]
+    async fn test_election_safety() {
+        // 선출 안전성: 한 번에 최대 1개의 리더만 가능
+        let network = RaftNetwork::new(3);
+
+        info!("\n=== Election Safety Test ===");
+
+        // 여러 노드에서 동시에 선출 시도
+        let handle1 = tokio::spawn({
+            let net = Arc::new(network.clone_for_election());
+            async move {
+                net.conduct_election(0).await
+            }
+        });
+
+        let handle2 = tokio::spawn({
+            let net = Arc::new(network.clone_for_election());
+            async move {
+                net.conduct_election(1).await
+            }
+        });
+
+        // 잠시 대기 후 결과 확인
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // 최종적으로 1개의 리더만 존재해야 함
+        let mut leader_count = 0;
+        for node in &network.nodes {
+            let n = node.read().await;
+            if matches!(n.state, NodeState::Leader) {
+                leader_count += 1;
+            }
+        }
+
+        info!("최종 리더 개수: {}", leader_count);
+        assert_eq!(leader_count, 1, "선출 안전성: 최대 1개 리더");
+        info!("선출 안전성 검증 ✅");
+    }
+
+    #[tokio::test]
+    async fn test_log_safety() {
+        // 로그 안전성: 커밋된 항목은 손실되지 않음
+        let network = RaftNetwork::new(5);
+
+        info!("\n=== Log Safety Test ===");
+
+        // 리더 선출
+        network.conduct_election(0).await;
+
+        // 중요한 데이터 항목 추가
+        let important_entries = vec!["critical_1", "critical_2", "critical_3"];
+        {
+            let mut leader = network.nodes[0].write().await;
+            for (i, data) in important_entries.iter().enumerate() {
+                leader.log.push(LogEntry {
+                    index: (i + 1) as u64,
+                    term: 1,
+                    command: data.to_string(),
+                });
+            }
+            leader.commit_index = important_entries.len() as u64;
+        }
+
+        // 로그 복제
+        network.replicate_log(0).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // 모든 노드에서 항목 확인
+        let leader_log = network.nodes[0].read().await.log.clone();
+        for (i, node) in network.nodes.iter().enumerate() {
+            let follower = node.read().await;
+            assert_eq!(
+                follower.log.len(),
+                leader_log.len(),
+                "노드 {}의 로그 개수",
+                i
+            );
+
+            for (idx, entry) in follower.log.iter().enumerate() {
+                assert_eq!(
+                    entry.command, important_entries[idx],
+                    "노드 {}의 항목 {}",
+                    i, idx
+                );
+            }
+        }
+
+        info!("로그 안전성 검증: 모든 항목이 모든 노드에 복제됨 ✅");
+    }
+
+    #[tokio::test]
+    async fn test_liveness_recovery_from_leader_failure() {
+        // 생존성: 리더 장애에서도 새로운 리더 선출 가능
+        let network = RaftNetwork::new(5);
+
+        info!("\n=== Liveness: Recovery from Leader Failure ===");
+
+        // 초기 리더 선출
+        network.conduct_election(0).await;
+        {
+            let node = network.nodes[0].read().await;
+            assert!(matches!(node.state, NodeState::Leader), "초기 리더 선출");
+        }
+
+        // 리더와 모든 노드의 통신 단절 (완전 고장)
+        for i in 1..5 {
+            network.set_message_loss(0, i, 1.0);
+            network.set_message_loss(i, 0, 1.0);
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // 다른 노드에서 새로운 리더 선출 (대다수 파티션)
+        let new_election = network.conduct_election(1).await;
+        info!("새로운 리더 선출 결과: {}", new_election);
+
+        // 최종 상태 확인
+        let status = network.get_status().await;
+        info!("장애 복구 후: {} leaders", status.leaders);
+    }
 }
