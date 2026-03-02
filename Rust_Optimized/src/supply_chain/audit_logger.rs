@@ -2,7 +2,9 @@
 /// 모든 의존성 변경 및 보안 검사 기록
 
 use chrono::Utc;
+use tracing::{info, warn, error};
 use std::collections::HashMap;
+use tracing::{info, warn, error};
 
 /// 감사 로그 항목
 #[derive(Clone, Debug)]
@@ -120,7 +122,7 @@ impl AuditLogger {
         };
 
         self.log(log);
-        println!(
+        info!(
             "[AUDIT] ✅ Dependency added: {} v{}",
             dependency_name, version
         );
@@ -147,7 +149,7 @@ impl AuditLogger {
         };
 
         self.log(log);
-        println!("[AUDIT] 🗑️  Dependency removed: {}", dependency_name);
+        info!("[AUDIT] 🗑️  Dependency removed: {}", dependency_name);
     }
 
     /// 의존성 업그레이드 기록
@@ -173,7 +175,7 @@ impl AuditLogger {
         };
 
         self.log(log);
-        println!(
+        info!(
             "[AUDIT] ⬆️  Dependency upgraded: {} {} -> {}",
             dependency_name, old_version, new_version
         );
@@ -210,7 +212,7 @@ impl AuditLogger {
         self.log(log);
 
         let status = if vulnerabilities_found > 0 { "⚠️ " } else { "✅" };
-        println!(
+        info!(
             "[AUDIT] {}Security scan completed: {} crates, {} vulnerabilities",
             status, scanned_crates, vulnerabilities_found
         );
@@ -237,7 +239,7 @@ impl AuditLogger {
         };
 
         self.log(log);
-        println!(
+        info!(
             "[AUDIT] 🚨 Vulnerability detected: {} - {} [{}]",
             crate_name, vulnerability_id, severity
         );
@@ -275,7 +277,7 @@ impl AuditLogger {
         self.log(log);
 
         let status = if passed { "✅" } else { "❌" };
-        println!(
+        info!(
             "[AUDIT] {} Regression test: {} {} tests",
             status, dependency, test_count
         );
@@ -296,7 +298,7 @@ impl AuditLogger {
         };
 
         self.log(log);
-        println!(
+        info!(
             "[AUDIT] 📋 SBOM generated: {} components",
             component_count
         );
@@ -329,7 +331,7 @@ impl AuditLogger {
         self.log(log);
 
         let status = if passed { "✅" } else { "⚠️" };
-        println!("[AUDIT] {} Compliance check: {} issues", status, issues_found);
+        info!("[AUDIT] {} Compliance check: {} issues", status, issues_found);
     }
 
     /// 감사 로그 조회

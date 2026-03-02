@@ -2,13 +2,17 @@
 /// 모든 카오스 엔지니어링 시나리오를 자동으로 실행하고 결과를 집계
 
 use super::injector::ChaosOrchestrator;
+use tracing::{info, warn, error};
 use super::recovery_validator::RecoveryTracker;
+use tracing::{info, warn, error};
 use super::scenarios::{
+use tracing::{info, warn, error};
     scenario_1_high_latency, scenario_2_network_partition, scenario_3_node_crash,
     scenario_4_disk_error, scenario_5_slow_replication, scenario_6_data_corruption,
     scenario_7_multiple_failures, ChaosTestResult,
 };
 use std::time::Instant;
+use tracing::{info, warn, error};
 
 /// 카오스 테스트 스위트
 pub struct ChaosTestSuite {
@@ -29,10 +33,10 @@ impl ChaosTestSuite {
 
     /// 모든 시나리오 실행
     pub async fn run_all_scenarios(&mut self) -> ChaosTestSuiteResult {
-        println!("\n╔════════════════════════════════════════════════════════════╗");
-        println!("║      Chaos Engineering Test Suite (Phase I)              ║");
-        println!("║      7 Scenarios | Full Recovery Validation              ║");
-        println!("╚════════════════════════════════════════════════════════════╝");
+        info!("\n╔════════════════════════════════════════════════════════════╗");
+        info!("║      Chaos Engineering Test Suite (Phase I)              ║");
+        info!("║      7 Scenarios | Full Recovery Validation              ║");
+        info!("╚════════════════════════════════════════════════════════════╝");
 
         let suite_start = Instant::now();
 
@@ -167,7 +171,7 @@ impl ChaosTestSuite {
     /// 결과 프린트
     fn print_result(&self, result: &ChaosTestResult) {
         let status = if result.passed { "✅ PASS" } else { "❌ FAIL" };
-        println!(
+        info!(
             "\n{} {} | Detection: {}ms | Recovery: {}ms | Data Loss: {}",
             status,
             result.scenario_name,
@@ -177,7 +181,7 @@ impl ChaosTestSuite {
         );
 
         if let Some(err) = &result.error_message {
-            println!("   Error: {}", err);
+            info!("   Error: {}", err);
         }
     }
 

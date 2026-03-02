@@ -2,9 +2,13 @@
 /// 네트워크 지연, 단절, 노드 크래시 등을 주입하여 시스템 복원력 테스트
 
 use std::sync::Arc;
+use tracing::{info, warn, error};
 use std::time::Duration;
+use tracing::{info, warn, error};
 use dashmap::DashMap;
+use tracing::{info, warn, error};
 use tokio::time::sleep;
+use tracing::{info, warn, error};
 
 /// 장애 유형
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
@@ -42,13 +46,13 @@ impl NetworkDelayInjector {
     /// 특정 노드에 지연 추가
     pub async fn inject_latency(&self, node: u32, delay_ms: u64) {
         self.delays.insert(node, delay_ms);
-        println!("[CHAOS] Injected {}ms latency to node {}", delay_ms, node);
+        info!("[CHAOS] Injected {}ms latency to node {}", delay_ms, node);
     }
 
     /// 지연 해제
     pub async fn remove_latency(&self, node: u32) {
         self.delays.remove(&node);
-        println!("[CHAOS] Removed latency from node {}", node);
+        info!("[CHAOS] Removed latency from node {}", node);
     }
 
     /// 특정 노드의 현재 지연 조회
@@ -90,13 +94,13 @@ impl NetworkPartitionInjector {
     /// 특정 노드 격리
     pub async fn partition_node(&self, node: u32) {
         self.partitions.insert(node, true);
-        println!("[CHAOS] Network partition on node {} (ISOLATED)", node);
+        info!("[CHAOS] Network partition on node {} (ISOLATED)", node);
     }
 
     /// 노드 복구
     pub async fn heal_partition(&self, node: u32) {
         self.partitions.insert(node, false);
-        println!("[CHAOS] Network partition healed on node {}", node);
+        info!("[CHAOS] Network partition healed on node {}", node);
     }
 
     /// 도달 가능성 확인
@@ -138,13 +142,13 @@ impl NodeCrashSimulator {
     /// 노드 크래시
     pub async fn crash_node(&self, node: u32) {
         self.crashed_nodes.insert(node, true);
-        println!("[CHAOS] Node {} CRASHED (all operations failed)", node);
+        info!("[CHAOS] Node {} CRASHED (all operations failed)", node);
     }
 
     /// 노드 복구
     pub async fn restart_node(&self, node: u32) {
         self.crashed_nodes.insert(node, false);
-        println!("[CHAOS] Node {} restarted (recovering state)", node);
+        info!("[CHAOS] Node {} restarted (recovering state)", node);
     }
 
     /// 노드 실행 상태 확인
@@ -187,7 +191,7 @@ impl DiskErrorInjector {
     pub async fn set_error_rate(&self, rate: f64) {
         let rate = rate.clamp(0.0, 1.0);
         *self.error_rate.lock() = rate;
-        println!("[CHAOS] Disk error rate set to {:.1}%", rate * 100.0);
+        info!("[CHAOS] Disk error rate set to {:.1}%", rate * 100.0);
     }
 
     /// 오류 발생 시뮬레이션
@@ -226,7 +230,7 @@ impl ReplicationThrottler {
     /// 복제 속도 제한 (bytes/sec)
     pub async fn set_speed_limit(&self, bps: u64) {
         *self.bytes_per_second.lock() = bps;
-        println!("[CHAOS] Replication speed limited to {} bytes/sec", bps);
+        info!("[CHAOS] Replication speed limited to {} bytes/sec", bps);
     }
 
     /// 속도 제한 제거
@@ -274,7 +278,7 @@ impl ChaosOrchestrator {
 
     /// 카오스 시나리오 시작
     pub async fn inject_chaos(&self, scenario: FailureType, node: u32, duration_ms: u64, severity: f64) {
-        println!(
+        info!(
             "\n🔴 [CHAOS] Injecting {:?} on node {} for {}ms (severity: {:.1}%)\n",
             scenario, node, duration_ms, severity * 100.0
         );
@@ -298,10 +302,10 @@ impl ChaosOrchestrator {
                 self.replication.set_speed_limit(limit).await;
             }
             FailureType::DataCorruption => {
-                println!("[CHAOS] Data corruption rate: {:.1}%", severity * 100.0);
+                info!("[CHAOS] Data corruption rate: {:.1}%", severity * 100.0);
             }
             FailureType::MultipleFailures => {
-                println!("[CHAOS] Multiple concurrent failures injected");
+                info!("[CHAOS] Multiple concurrent failures injected");
             }
         }
 
@@ -314,7 +318,7 @@ impl ChaosOrchestrator {
 
     /// 카오스 복구
     pub async fn recover_from_chaos(&self, scenario: FailureType, node: u32) {
-        println!("[CHAOS] Recovering from {:?}...", scenario);
+        info!("[CHAOS] Recovering from {:?}...", scenario);
 
         match scenario {
             FailureType::NetworkLatency => {
@@ -335,7 +339,7 @@ impl ChaosOrchestrator {
             _ => {}
         }
 
-        println!("[CHAOS] ✅ Recovery complete\n");
+        info!("[CHAOS] ✅ Recovery complete\n");
     }
 }
 

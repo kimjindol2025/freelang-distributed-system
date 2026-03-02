@@ -2,7 +2,9 @@
 /// 의존성 업그레이드 후 호환성 및 회귀 테스트
 
 use std::collections::HashMap;
+use tracing::{info, warn, error};
 use std::time::Instant;
+use tracing::{info, warn, error};
 
 /// 테스트 케이스
 #[derive(Clone, Debug)]
@@ -114,7 +116,7 @@ impl RegressionTester {
         old_version: &str,
         new_version: &str,
     ) -> RegressionTestSuite {
-        println!(
+        info!(
             "\n🧪 Running Regression Tests: {} {} -> {}",
             dependency, old_version, new_version
         );
@@ -143,7 +145,7 @@ impl RegressionTester {
             test_results.push(result);
 
             let status = if passed { "✅" } else { "❌" };
-            println!("  {} {} ({} ms)", status, test_case.name, duration_ms);
+            info!("  {} {} ({} ms)", status, test_case.name, duration_ms);
         }
 
         let total_duration_ms = suite_start.elapsed().as_millis() as u64;

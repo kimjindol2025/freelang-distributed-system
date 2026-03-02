@@ -12,6 +12,7 @@ pub use self::auth::{TokenValidator, AuthToken};
 pub use self::encryption::DataEncryption;
 
 use std::sync::Arc;
+use tracing::{info, warn, error};
 
 /// 보안 설정
 #[derive(Clone, Debug)]
@@ -80,9 +81,9 @@ impl SecurityManager {
             None
         };
 
-        println!("🔐 Security Manager initialized");
-        println!("   TLS: {}", if config.tls_enabled { "✅ Enabled" } else { "❌ Disabled" });
-        println!("   Encryption: {}", if config.encryption_enabled { "✅ Enabled" } else { "❌ Disabled" });
+        info!("🔐 Security Manager initialized");
+        info!("   TLS: {}", if config.tls_enabled { "✅ Enabled" } else { "❌ Disabled" });
+        info!("   Encryption: {}", if config.encryption_enabled { "✅ Enabled" } else { "❌ Disabled" });
 
         Ok(SecurityManager {
             config: Arc::new(config),

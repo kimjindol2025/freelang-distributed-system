@@ -81,7 +81,14 @@ async fn initialize_security(config: SecurityConfig) -> Arc<SecurityManager> {
         Ok(manager) => Arc::new(manager),
         Err(e) => {
             warn!("Security initialization warning: {}", e);
-            Arc::new(SecurityManager::new(SecurityConfig::default()).unwrap())
+            match SecurityManager::new(SecurityConfig::default()) {
+                Ok(manager) => Arc::new(manager),
+                Err(fallback_err) => {
+                    error!("Failed to initialize with default config: {}", fallback_err);
+                    // 기본 Manager는 반드시 생성 가능해야 함
+                    panic!("Critical: Cannot initialize security manager even with defaults")
+                }
+            }
         }
     }
 }
@@ -273,7 +280,7 @@ async fn run_chaos_tests() {
 
     // 최종 리포트 생성
     let report = suite.generate_final_report(&suite_result);
-    println!("{}", report);
+    info!("{}", report);
 
     // 결과 요약
     if suite_result.success_rate == 100.0 {

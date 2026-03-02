@@ -2,10 +2,15 @@
 /// 모든 공급망 보안 컴포넌트를 통합하는 상위 엔진
 
 use super::dependency_checker::{DependencyChecker, DependencyCheckResult};
+use tracing::{info, warn, error};
 use super::sbom_generator::{SBOMGenerator, SBOM};
+use tracing::{info, warn, error};
 use super::vulnerability_scanner::{VulnerabilityScanner, VulnerabilityScanResult};
+use tracing::{info, warn, error};
 use super::regression_tester::{RegressionTester, RegressionTestSuite};
+use tracing::{info, warn, error};
 use super::audit_logger::AuditLogger;
+use tracing::{info, warn, error};
 
 /// 공급망 보안 보고서
 #[derive(Clone, Debug)]
@@ -53,31 +58,31 @@ impl SupplyChainSecurityEngine {
 
     /// 전체 공급망 보안 검사 실행
     pub async fn run_full_security_check(&mut self) -> SupplyChainSecurityReport {
-        println!("\n╔════════════════════════════════════════════════════════╗");
-        println!("║    Phase J: Supply Chain Security Assessment (Full)   ║");
-        println!("╚════════════════════════════════════════════════════════╝\n");
+        info!("\n╔════════════════════════════════════════════════════════╗");
+        info!("║    Phase J: Supply Chain Security Assessment (Full)   ║");
+        info!("╚════════════════════════════════════════════════════════╝\n");
 
         // 1단계: 의존성 로드 및 검증
-        println!("📋 Stage 1: Loading and validating dependencies...");
+        info!("📋 Stage 1: Loading and validating dependencies...");
         self.dependency_checker
             .load_from_cargo_toml(&self.cargo_path)
-            .unwrap_or_else(|e| println!("Warning: {}", e));
+            .unwrap_or_else(|e| info!("Warning: {}", e));
 
         let dependency_check = self.dependency_checker.validate_all();
-        println!(
+        info!(
             "  ✅ Found {} dependencies ({} high-risk)",
             dependency_check.total_dependencies,
             dependency_check.issues.len()
         );
 
         // 2단계: SBOM 생성
-        println!("\n📄 Stage 2: Generating SBOM...");
+        info!("\n📄 Stage 2: Generating SBOM...");
         let sbom = self.sbom_generator.generate_from_checker(&self.dependency_checker);
         self.audit_logger.log_sbom_generated(sbom.components.len());
-        println!("  ✅ SBOM generated with {} components", sbom.components.len());
+        info!("  ✅ SBOM generated with {} components", sbom.components.len());
 
         // 3단계: 취약점 스캔
-        println!("\n🔍 Stage 3: Running vulnerability scanner...");
+        info!("\n🔍 Stage 3: Running vulnerability scanner...");
         let crates: Vec<(String, String)> = self
             .dependency_checker
             .get_all_dependencies()
@@ -99,17 +104,17 @@ impl SupplyChainSecurityEngine {
             );
         }
 
-        println!(
+        info!(
             "  ✅ Scanned {} crates, found {} vulnerabilities",
             vulnerability_scan.scanned_crates, vulnerability_scan.total_vulnerabilities
         );
 
         // 4단계: 회귀 테스트 (선택사항)
-        println!("\n🧪 Stage 4: Running regression tests...");
+        info!("\n🧪 Stage 4: Running regression tests...");
         self.run_regression_tests().await;
 
         // 5단계: 컴플라이언스 검사
-        println!("\n✅ Stage 5: Compliance check...");
+        info!("\n✅ Stage 5: Compliance check...");
         let issues_found = dependency_check.issues.len() + vulnerability_scan.total_vulnerabilities;
         self.audit_logger.log_compliance_check(issues_found == 0, issues_found);
 

@@ -2,8 +2,11 @@
 /// 장애 후 시스템 복구 상태 검증
 
 use std::time::Instant;
+use tracing::{info, warn, error};
 use dashmap::DashMap;
+use tracing::{info, warn, error};
 use std::sync::Arc;
+use tracing::{info, warn, error};
 
 /// 시스템 상태 스냅샷
 #[derive(Clone, Debug)]
@@ -77,7 +80,7 @@ impl RecoveryMonitor {
         if let Some(detect_time) = self.detection_time {
             let duration_ms = detect_time.duration_since(self.failure_start).as_millis() as u64;
             self.metrics.time_to_detect_ms = duration_ms;
-            println!("[CHAOS] Problem detected in {}ms", duration_ms);
+            info!("[CHAOS] Problem detected in {}ms", duration_ms);
         }
     }
 
@@ -88,7 +91,7 @@ impl RecoveryMonitor {
             let duration_ms = recover_time.duration_since(self.failure_start).as_millis() as u64;
             self.metrics.time_to_recovery_ms = duration_ms;
             self.metrics.recovery_success = true;
-            println!("[CHAOS] System recovered in {}ms", duration_ms);
+            info!("[CHAOS] System recovered in {}ms", duration_ms);
         }
     }
 
@@ -206,18 +209,18 @@ pub struct IntegrityReport {
 
 impl IntegrityReport {
     pub fn print_summary(&self) {
-        println!("\n╔════════════════════════════════════════╗");
-        println!("║  Integrity Verification Report       ║");
-        println!("╠════════════════════════════════════════╣");
-        println!("║ Status: {:<31} ║", if self.success { "✅ PASS" } else { "❌ FAIL" });
-        println!("║ Data Loss: {:<28} ║", self.data_loss);
-        println!("║ Data Corruption: {:<22} ║", self.data_corruption);
-        println!("╚════════════════════════════════════════╝");
+        info!("\n╔════════════════════════════════════════╗");
+        info!("║  Integrity Verification Report       ║");
+        info!("╠════════════════════════════════════════╣");
+        info!("║ Status: {:<31} ║", if self.success { "✅ PASS" } else { "❌ FAIL" });
+        info!("║ Data Loss: {:<28} ║", self.data_loss);
+        info!("║ Data Corruption: {:<22} ║", self.data_corruption);
+        info!("╚════════════════════════════════════════╝");
 
         if !self.inconsistencies.is_empty() {
-            println!("\nInconsistencies:");
+            info!("\nInconsistencies:");
             for (i, issue) in self.inconsistencies.iter().enumerate() {
-                println!("  {}. {}", i + 1, issue);
+                info!("  {}. {}", i + 1, issue);
             }
         }
     }
@@ -238,7 +241,7 @@ impl RecoveryTracker {
     /// 새로운 복구 프로세스 시작
     pub fn start_tracking(&self, test_id: String) {
         self.monitors.insert(test_id.clone(), RecoveryMonitor::new());
-        println!("[CHAOS] Tracking recovery for test: {}", test_id);
+        info!("[CHAOS] Tracking recovery for test: {}", test_id);
     }
 
     /// 특정 테스트의 모니터 조회 및 업데이트

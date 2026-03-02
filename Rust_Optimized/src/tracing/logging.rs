@@ -2,8 +2,11 @@
 /// 모든 로그에 자동으로 TraceID 추가
 
 use super::core::{get_trace_id, Span};
+use tracing::{info, warn, error};
 use std::fmt;
+use tracing::{info, warn, error};
 use std::time::Instant;
+use tracing::{info, warn, error};
 
 /// TracedLogger: TraceID를 포함한 로거
 pub struct TracedLogger;
@@ -12,37 +15,37 @@ impl TracedLogger {
     /// Info 레벨 로그 (TraceID 자동 포함)
     pub fn info(msg: &str) {
         let trace_id = get_trace_id();
-        println!("[INFO] [TRACE:{}] {}", trace_id, msg);
+        info!("[INFO] [TRACE:{}] {}", trace_id, msg);
     }
 
     /// Warning 레벨 로그
     pub fn warn(msg: &str) {
         let trace_id = get_trace_id();
-        println!("[WARN] [TRACE:{}] {}", trace_id, msg);
+        info!("[WARN] [TRACE:{}] {}", trace_id, msg);
     }
 
     /// Error 레벨 로그
     pub fn error(msg: &str) {
         let trace_id = get_trace_id();
-        println!("[ERROR] [TRACE:{}] {}", trace_id, msg);
+        info!("[ERROR] [TRACE:{}] {}", trace_id, msg);
     }
 
     /// Debug 레벨 로그
     pub fn debug(msg: &str) {
         let trace_id = get_trace_id();
-        println!("[DEBUG] [TRACE:{}] {}", trace_id, msg);
+        info!("[DEBUG] [TRACE:{}] {}", trace_id, msg);
     }
 
     /// Span 진입 로그
     pub fn debug_enter(operation: &str) {
         let trace_id = get_trace_id();
-        println!("[TRACE:{}] >>> {}", trace_id, operation);
+        info!("[TRACE:{}] >>> {}", trace_id, operation);
     }
 
     /// Span 종료 로그
     pub fn debug_exit(operation: &str, duration_ms: u64) {
         let trace_id = get_trace_id();
-        println!("[TRACE:{}] <<< {} ({}ms)", trace_id, operation, duration_ms);
+        info!("[TRACE:{}] <<< {} ({}ms)", trace_id, operation, duration_ms);
     }
 
     /// 구조화된 로그 (JSON 형식)
@@ -55,7 +58,7 @@ impl TracedLogger {
         }
         json.push('}');
 
-        println!("{}", json);
+        info!("{}", json);
     }
 }
 
@@ -87,7 +90,7 @@ macro_rules! measure {
         let duration = start.elapsed().as_millis() as u64;
 
         if duration > 100 {
-            eprintln!("[SLOW] {} took {}ms", $operation, duration);
+            einfo!("[SLOW] {} took {}ms", $operation, duration);
         }
 
         result
@@ -139,17 +142,17 @@ impl PerformanceLogger {
         let duration_ms = start.elapsed().as_millis() as u64;
 
         if duration_ms >= self.thresholds.error_ms {
-            println!(
+            info!(
                 "[ERROR] [TRACE:{}] {} took {}ms (> {}ms threshold)",
                 trace_id, operation, duration_ms, self.thresholds.error_ms
             );
         } else if duration_ms >= self.thresholds.warn_ms {
-            println!(
+            info!(
                 "[WARN] [TRACE:{}] {} took {}ms (> {}ms threshold)",
                 trace_id, operation, duration_ms, self.thresholds.warn_ms
             );
         } else {
-            println!(
+            info!(
                 "[DEBUG] [TRACE:{}] {} took {}ms",
                 trace_id, operation, duration_ms
             );
@@ -166,7 +169,7 @@ impl ErrorLogger {
     /// 에러를 TraceID와 함께 로깅
     pub fn log(error: impl fmt::Display, context: &str) {
         let trace_id = get_trace_id();
-        println!(
+        info!(
             "[ERROR] [TRACE:{}] {}: {}",
             trace_id, context, error
         );
@@ -175,7 +178,7 @@ impl ErrorLogger {
     /// 복구 가능한 에러
     pub fn recoverable(error: impl fmt::Display, context: &str) {
         let trace_id = get_trace_id();
-        println!(
+        info!(
             "[WARN] [TRACE:{}] [RECOVERABLE] {}: {}",
             trace_id, context, error
         );
@@ -184,7 +187,7 @@ impl ErrorLogger {
     /// 치명적인 에러
     pub fn fatal(error: impl fmt::Display, context: &str) {
         let trace_id = get_trace_id();
-        println!(
+        info!(
             "[FATAL] [TRACE:{}] {}: {}",
             trace_id, context, error
         );
@@ -198,7 +201,7 @@ impl NetworkLogger {
     /// RPC 요청 로깅
     pub fn log_rpc_request(service: &str, method: &str, target_node: u32) {
         let trace_id = get_trace_id();
-        println!(
+        info!(
             "[RPC] [TRACE:{}] {} → {} ({})",
             trace_id, service, method, target_node
         );
@@ -207,7 +210,7 @@ impl NetworkLogger {
     /// RPC 응답 로깅
     pub fn log_rpc_response(service: &str, method: &str, duration_ms: u64, status: &str) {
         let trace_id = get_trace_id();
-        println!(
+        info!(
             "[RPC] [TRACE:{}] {} ← {} ({}ms) [{}]",
             trace_id, service, method, duration_ms, status
         );
@@ -216,7 +219,7 @@ impl NetworkLogger {
     /// 네트워크 지연 감지
     pub fn log_latency_warning(node: u32, latency_ms: u64, threshold_ms: u64) {
         let trace_id = get_trace_id();
-        println!(
+        info!(
             "[WARN] [TRACE:{}] High latency to Node {}: {}ms (threshold: {}ms)",
             trace_id, node, latency_ms, threshold_ms
         );

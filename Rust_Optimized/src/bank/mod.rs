@@ -7,6 +7,7 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
+use tracing::info;
 
 #[derive(Clone, Debug)]
 pub struct Account {
@@ -35,7 +36,7 @@ pub struct BankSystem {
 impl BankSystem {
     /// 새 은행 시스템 생성
     pub fn new() -> Self {
-        println!("🏦 Bank System initialized");
+        info!("🏦 Bank System initialized");
 
         BankSystem {
             accounts: Arc::new(DashMap::new()),
@@ -57,7 +58,7 @@ impl BankSystem {
         };
 
         self.accounts.insert(account_id.to_string(), account);
-        println!("✅ Account created: {}", account_id);
+        info!("✅ Account created: {}", account_id);
     }
 
     /// 계좌 조회
@@ -117,7 +118,7 @@ impl BankSystem {
         self.total_transactions
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        println!(
+        info!(
             "✅ Transfer: {} -> {} ({} cents)",
             from, to, amount
         );
@@ -129,7 +130,7 @@ impl BankSystem {
     pub async fn deposit(&self, account_id: &str, amount: i64) -> Result<(), String> {
         if let Some(mut account) = self.accounts.get_mut(account_id) {
             account.balance += amount;
-            println!("✅ Deposit: {} ({} cents)", account_id, amount);
+            info!("✅ Deposit: {} ({} cents)", account_id, amount);
             Ok(())
         } else {
             Err("Account not found".to_string())
@@ -144,7 +145,7 @@ impl BankSystem {
             }
 
             account.balance -= amount;
-            println!("✅ Withdrawal: {} ({} cents)", account_id, amount);
+            info!("✅ Withdrawal: {} ({} cents)", account_id, amount);
             Ok(())
         } else {
             Err("Account not found".to_string())
@@ -180,10 +181,10 @@ impl BankSystem {
     pub fn print_status(&self) {
         let stats = self.get_stats();
 
-        println!("\n💰 Bank Statistics:");
-        println!("├─ Total Accounts: {}", stats.total_accounts);
-        println!("├─ Total Transactions: {}", stats.total_transactions);
-        println!("└─ Total Balance: ${:.2}", stats.total_balance as f64 / 100.0);
+        info!("\n💰 Bank Statistics:");
+        info!("├─ Total Accounts: {}", stats.total_accounts);
+        info!("├─ Total Transactions: {}", stats.total_transactions);
+        info!("└─ Total Balance: ${:.2}", stats.total_balance as f64 / 100.0);
     }
 }
 

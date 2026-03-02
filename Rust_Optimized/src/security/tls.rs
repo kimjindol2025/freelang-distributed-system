@@ -120,12 +120,12 @@ impl TlsConfig {
 
     /// TLS 설정 상태 출력
     pub fn print_status(&self) {
-        println!("\n🔐 TLS Status:");
-        println!("├─ Enabled: {}", self.enabled);
-        println!("├─ Min Version: {:?}", self.min_version);
-        println!("├─ Cipher Suites: {}", self.cipher_suites.len());
-        println!("├─ Certificate: {}", self.cert.path);
-        println!("└─ Private Key: {}", self.key.path);
+        info!("\n🔐 TLS Status:");
+        info!("├─ Enabled: {}", self.enabled);
+        info!("├─ Min Version: {:?}", self.min_version);
+        info!("├─ Cipher Suites: {}", self.cipher_suites.len());
+        info!("├─ Certificate: {}", self.cert.path);
+        info!("└─ Private Key: {}", self.key.path);
     }
 }
 

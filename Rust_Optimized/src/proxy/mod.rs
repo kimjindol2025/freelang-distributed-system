@@ -165,15 +165,15 @@ impl ProxyServer {
     pub fn print_status(&self) {
         let metrics = self.get_metrics();
 
-        println!("\n📊 Proxy Metrics:");
-        println!("├─ Total Requests: {}", metrics.total_requests);
-        println!("├─ Successful: {}", metrics.successful_requests);
-        println!("├─ Failed: {}", metrics.failed_requests);
-        println!("└─ Avg Latency: {}ms", metrics.average_latency);
+        info!("📊 Proxy Metrics:");
+        info!("├─ Total Requests: {}", metrics.total_requests);
+        info!("├─ Successful: {}", metrics.successful_requests);
+        info!("├─ Failed: {}", metrics.failed_requests);
+        info!("└─ Avg Latency: {}ms", metrics.average_latency);
 
-        println!("\n📈 Backend Status:");
+        info!("📈 Backend Status:");
         for backend in &self.backends {
-            println!(
+            info!(
                 "  Node {}: {} connections (weight: {})",
                 backend.id,
                 backend.connection_count.load(Ordering::Relaxed),

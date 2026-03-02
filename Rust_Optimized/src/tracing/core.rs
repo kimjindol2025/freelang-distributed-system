@@ -2,11 +2,17 @@
 /// 분산 트레이싱의 기본 인프라: TraceID, Span, TracingContext
 
 use std::cell::RefCell;
+use tracing::{info, warn, error};
 use std::collections::HashMap;
+use tracing::{info, warn, error};
 use std::sync::Arc;
+use tracing::{info, warn, error};
 use std::time::{SystemTime, UNIX_EPOCH, Instant};
+use tracing::{info, warn, error};
 use uuid::Uuid;
+use tracing::{info, warn, error};
 use dashmap::DashMap;
+use tracing::{info, warn, error};
 
 /// TraceID: 전체 요청의 고유 식별자
 /// "2026-03-02T10:30:45.123456-abc-def-123" 형식
@@ -78,7 +84,7 @@ impl SpanRecord {
             SpanStatus::Slow => "⚠",
         };
 
-        println!(
+        info!(
             "[TRACE:{}] {} {} → {} ({}ms) {}",
             self.trace_id,
             status_str,
@@ -278,21 +284,21 @@ impl TraceReport {
 
     /// 전체 리포트 출력
     pub fn print_summary(&self) {
-        println!(
+        info!(
             "\n╔════════════════════════════════════════╗"
         );
-        println!("║ Trace Report: {}                   ║", &self.trace_id[..8]);
-        println!("╠════════════════════════════════════════╣");
-        println!("║ Total Duration: {}ms                    ║", self.total_duration_ms);
-        println!("║ Span Count: {}                         ║", self.span_count);
-        println!("╚════════════════════════════════════════╝");
+        info!("║ Trace Report: {}                   ║", &self.trace_id[..8]);
+        info!("╠════════════════════════════════════════╣");
+        info!("║ Total Duration: {}ms                    ║", self.total_duration_ms);
+        info!("║ Span Count: {}                         ║", self.span_count);
+        info!("╚════════════════════════════════════════╝");
 
         for span in &self.spans {
             span.log();
         }
 
         if let Some(bottleneck) = self.find_bottleneck() {
-            println!(
+            info!(
                 "\n⚠️  Bottleneck: {} ({}ms)",
                 bottleneck.operation, bottleneck.duration_ms
             );

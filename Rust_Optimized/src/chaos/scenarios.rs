@@ -2,10 +2,13 @@
 /// 7가지 카오스 엔지니어링 시나리오
 
 use super::injector::{ChaosOrchestrator, FailureType};
+use tracing::{info, warn, error};
 use super::recovery_validator::{
+use tracing::{info, warn, error};
     RecoveryMonitor, SystemSnapshot, IntegrityValidator, RecoveryTracker,
 };
 use std::sync::Arc;
+use tracing::{info, warn, error};
 
 /// 카오스 테스트 결과
 #[derive(Clone, Debug)]
@@ -20,7 +23,7 @@ pub struct ChaosTestResult {
 
 /// Scenario 1: 네트워크 지연 (200ms)
 pub async fn scenario_1_high_latency(orchestrator: &ChaosOrchestrator, tracker: &RecoveryTracker) -> ChaosTestResult {
-    println!("\n🔴 Scenario 1: Network Latency (200ms)");
+    info!("\n🔴 Scenario 1: Network Latency (200ms)");
 
     tracker.start_tracking("S1-HighLatency".to_string());
 
@@ -58,7 +61,7 @@ pub async fn scenario_1_high_latency(orchestrator: &ChaosOrchestrator, tracker: 
 
 /// Scenario 2: 부분 네트워크 단절
 pub async fn scenario_2_network_partition(orchestrator: &ChaosOrchestrator, tracker: &RecoveryTracker) -> ChaosTestResult {
-    println!("\n🔴 Scenario 2: Network Partition (Node 2)");
+    info!("\n🔴 Scenario 2: Network Partition (Node 2)");
 
     tracker.start_tracking("S2-Partition".to_string());
 
@@ -99,7 +102,7 @@ pub async fn scenario_2_network_partition(orchestrator: &ChaosOrchestrator, trac
 
 /// Scenario 3: 노드 다운
 pub async fn scenario_3_node_crash(orchestrator: &ChaosOrchestrator, tracker: &RecoveryTracker) -> ChaosTestResult {
-    println!("\n🔴 Scenario 3: Node Crash (Node 2)");
+    info!("\n🔴 Scenario 3: Node Crash (Node 2)");
 
     tracker.start_tracking("S3-NodeCrash".to_string());
 
@@ -142,7 +145,7 @@ pub async fn scenario_3_node_crash(orchestrator: &ChaosOrchestrator, tracker: &R
 
 /// Scenario 4: 디스크 오류 (10% 실패율)
 pub async fn scenario_4_disk_error(orchestrator: &ChaosOrchestrator, tracker: &RecoveryTracker) -> ChaosTestResult {
-    println!("\n🔴 Scenario 4: Disk Error (10% failure rate)");
+    info!("\n🔴 Scenario 4: Disk Error (10% failure rate)");
 
     tracker.start_tracking("S4-DiskError".to_string());
 
@@ -193,7 +196,7 @@ pub async fn scenario_4_disk_error(orchestrator: &ChaosOrchestrator, tracker: &R
 
 /// Scenario 5: 느린 복제
 pub async fn scenario_5_slow_replication(orchestrator: &ChaosOrchestrator, tracker: &RecoveryTracker) -> ChaosTestResult {
-    println!("\n🔴 Scenario 5: Slow Replication (100KB/s)");
+    info!("\n🔴 Scenario 5: Slow Replication (100KB/s)");
 
     tracker.start_tracking("S5-SlowReplication".to_string());
 
@@ -203,7 +206,7 @@ pub async fn scenario_5_slow_replication(orchestrator: &ChaosOrchestrator, track
     // 1MB 데이터 전송 시뮬레이션 (약 10초 소요)
     let transfer_time = orchestrator.replication.calculate_transfer_time(1024 * 1024).await;
 
-    println!("[CHAOS] Transfer time for 1MB: {:?}", transfer_time);
+    info!("[CHAOS] Transfer time for 1MB: {:?}", transfer_time);
 
     tracker.update_metrics("S5-SlowReplication", |monitor| {
         monitor.mark_detected();
@@ -233,7 +236,7 @@ pub async fn scenario_5_slow_replication(orchestrator: &ChaosOrchestrator, track
 
 /// Scenario 6: 데이터 손상
 pub async fn scenario_6_data_corruption(tracker: &RecoveryTracker) -> ChaosTestResult {
-    println!("\n🔴 Scenario 6: Data Corruption Detection");
+    info!("\n🔴 Scenario 6: Data Corruption Detection");
 
     tracker.start_tracking("S6-DataCorruption".to_string());
 
@@ -272,7 +275,7 @@ pub async fn scenario_6_data_corruption(tracker: &RecoveryTracker) -> ChaosTestR
 
 /// Scenario 7: 다중 장애
 pub async fn scenario_7_multiple_failures(orchestrator: &ChaosOrchestrator, tracker: &RecoveryTracker) -> ChaosTestResult {
-    println!("\n🔴 Scenario 7: Multiple Concurrent Failures");
+    info!("\n🔴 Scenario 7: Multiple Concurrent Failures");
 
     tracker.start_tracking("S7-MultipleFailures".to_string());
 
