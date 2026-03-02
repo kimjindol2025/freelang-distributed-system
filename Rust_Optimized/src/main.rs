@@ -12,6 +12,7 @@ mod raft;
 mod proxy;
 mod bank;
 mod security;
+mod tracing;  // Phase H: Observability - Distributed Tracing
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
