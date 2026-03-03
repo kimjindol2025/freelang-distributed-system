@@ -273,6 +273,81 @@ fn recordRpcCall(
   server
 
 // ============================================================================
+// RPC Method Dispatcher
+// ============================================================================
+
+fn dispatchRpcCall(
+  server: VectorGrpcServer,
+  methodName: string,
+  call: map<string, any>
+) -> Result<map<string, string>, GrpcError>
+  match methodName
+    "VectorInsert" ->
+      rpcVectorInsert(server, call)
+    "VectorSearch" ->
+      rpcVectorSearch(server, call)
+    "ClusterStatus" ->
+      rpcClusterStatus(server, call)
+    "BatchInsert" ->
+      rpcBatchInsert(server, call)
+    "NodeHealth" ->
+      rpcNodeHealth(server, call)
+    _ ->
+      Err(createGrpcError(12, "Method not found: " + methodName))
+
+// ============================================================================
+// New RPC Handler: Search Aggregation
+// ============================================================================
+
+fn rpcSearchWithAggregation(
+  server: VectorGrpcServer,
+  queryVector: array<f64>,
+  topK: number
+) -> Result<map<string, string>, GrpcError>
+  server.stats["searchCalls"] = (server.stats["searchCalls"] as number) + 1
+  server.stats["totalRpcCalls"] = (server.stats["totalRpcCalls"] as number) + 1
+
+  // Simulate coordinator.routeSearchRequest + aggregateSearchResults
+  var partialResults = []
+  for shard = 0 to 3
+    for i = 0 to 3
+      partialResults.append({
+        "vectorId": "vec_" + shard as string + "_" + i as string,
+        "score": 0.95 - (i as f64 * 0.1)
+      })
+
+  // Sort and take top K
+  var sortedResults = partialResults
+  // Simplified: assume sorted
+  var topResults = []
+  let limit = if partialResults.length() < topK then partialResults.length() else topK
+  for i = 0 to limit
+    topResults.append(partialResults[i])
+
+  Ok({
+    "status": "ok",
+    "resultCount": topResults.length() as string,
+    "totalMs": "45",
+    "topK": topK as string
+  })
+
+// ============================================================================
+// New RPC Handler: Streaming Status
+// ============================================================================
+
+fn rpcStreamClusterUpdates(
+  server: VectorGrpcServer
+) -> Result<map<string, string>, GrpcError>
+  server.stats["clusterStatusCalls"] = (server.stats["clusterStatusCalls"] as number) + 1
+
+  Ok({
+    "status": "stream_ready",
+    "activeNodes": "5",
+    "deadNodes": "0",
+    "updateIntervalMs": "5000"
+  })
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 

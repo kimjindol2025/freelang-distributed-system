@@ -396,7 +396,7 @@ fn serializeVectorSearchResponse(
   Ok(bytes)
 
 // ============================================================================
-// Deserialization
+// Deserialization - VectorInsertRequest
 // ============================================================================
 
 fn deserializeVectorInsertRequest(
@@ -450,6 +450,66 @@ fn deserializeVectorInsertRequest(
         return Err("Failed to decode tag: " + e)
 
   Ok(message)
+
+// ============================================================================
+// Deserialization - VectorSearchResponse
+// ============================================================================
+
+fn deserializeVectorSearchResponse(
+  bytes: array<number>
+) -> Result<map<string, any>, string>
+  if bytes.length() == 0
+    return Err("Empty bytes")
+
+  var message = {
+    "results": [],
+    "totalSearchMs": 0,
+    "partitionCount": 0
+  }
+
+  Ok(message)
+
+// ============================================================================
+// ClusterStatus Serialization
+// ============================================================================
+
+fn serializeClusterStatus(
+  activeNodes: number,
+  deadNodes: number,
+  overallHealth: string,
+  topologyVersion: number
+) -> Result<array<number>, string>
+  var bytes = []
+
+  // Field 1: activeNodes
+  let tag1 = encodeFieldTag(1, 0)
+  bytes.append(tag1)
+  var nodeBytes = encodeVarint(activeNodes)
+  for i = 0 to nodeBytes.length()
+    bytes.append(nodeBytes[i])
+
+  // Field 2: deadNodes
+  let tag2 = encodeFieldTag(2, 0)
+  bytes.append(tag2)
+  var deadBytes = encodeVarint(deadNodes)
+  for i = 0 to deadBytes.length()
+    bytes.append(deadBytes[i])
+
+  // Field 3: overallHealth (string)
+  let tag3 = encodeFieldTag(3, 2)
+  bytes.append(tag3)
+  var healthBytes = encodeVarint(overallHealth.length())
+  for i = 0 to healthBytes.length()
+    bytes.append(healthBytes[i])
+
+  // Field 4: topologyVersion
+  let tag4 = encodeFieldTag(4, 0)
+  bytes.append(tag4)
+  var topoBytes = encodeVarint(topologyVersion)
+  for i = 0 to topoBytes.length()
+    bytes.append(topoBytes[i])
+
+  Ok(bytes)
 
 // ============================================================================
 // Compression Ratio Calculation

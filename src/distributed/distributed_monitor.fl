@@ -172,6 +172,104 @@ fn generateDistributedHealthDashboard(metrics: DistributedMetrics) -> Distribute
   }
   dashboard
 
+// ============================================================================
+// Sharding Metrics Recording
+// ============================================================================
+
+fn recordShardingEvent(
+  metrics: ShardingMetrics,
+  eventType: string,
+  balanceScore: f64
+) -> ShardingMetrics
+  match eventType
+    "REBALANCE" ->
+      metrics.rebalancesTriggered = metrics.rebalancesTriggered + 1
+      metrics.balanceScore = balanceScore
+    "MIGRATION" ->
+      metrics.migrationsCompleted = metrics.migrationsCompleted + 1
+      metrics.balanceScore = balanceScore
+    _ ->
+      ()
+  metrics
+
+fn recordApiEvent(
+  metrics: APIMetrics,
+  success: bool,
+  latencyMs: f64
+) -> APIMetrics
+  metrics.totalRequests = metrics.totalRequests + 1
+  if success
+    metrics.successfulRequests = metrics.successfulRequests + 1
+  else
+    metrics.failedRequests = metrics.failedRequests + 1
+  // Update average latency
+  let alpha = 0.3
+  metrics.avgLatencyMs = (alpha * latencyMs) + ((1.0 - alpha) * metrics.avgLatencyMs)
+  metrics
+
+// ============================================================================
+// Comprehensive Metrics Report
+// ============================================================================
+
+fn reportDistributedMetrics(metrics: DistributedMetrics) -> string
+  var report = "=== DISTRIBUTED SYSTEM METRICS REPORT ===\n"
+  report = report + "\n[Raft Metrics]\n"
+  report = report + "Leader Elections: " + metrics.raftMetrics.leaderElections as string + "\n"
+  report = report + "Log Appends: " + metrics.raftMetrics.logAppends as string + "\n"
+  report = report + "Snapshots: " + metrics.raftMetrics.snapshotsTaken as string + "\n"
+  report = report + "Avg Commit Latency: " + metrics.raftMetrics.avgCommitLatencyMs as string + "ms\n"
+  report = report + "Quorum Success Rate: " + metrics.raftMetrics.quorumSuccessRate as string + "\n"
+
+  report = report + "\n[Replication Metrics]\n"
+  report = report + "Quorum Writes: " + metrics.replicationMetrics.quorumWrites as string + "\n"
+  report = report + "Quorum Failures: " + metrics.replicationMetrics.quorumFailures as string + "\n"
+  report = report + "Failovers Triggered: " + metrics.replicationMetrics.failoversTriggered as string + "\n"
+  report = report + "Active Replicas: " + metrics.replicationMetrics.activeReplicas as string + "\n"
+
+  report = report + "\n[Sharding Metrics]\n"
+  report = report + "Rebalances: " + metrics.shardingMetrics.rebalancesTriggered as string + "\n"
+  report = report + "Migrations Completed: " + metrics.shardingMetrics.migrationsCompleted as string + "\n"
+  report = report + "Balance Score: " + metrics.shardingMetrics.balanceScore as string + "\n"
+  report = report + "Avg Partition Load: " + metrics.shardingMetrics.avgPartitionLoad as string + "\n"
+
+  report = report + "\n[API Metrics]\n"
+  report = report + "Total Requests: " + metrics.apiMetrics.totalRequests as string + "\n"
+  report = report + "Successful: " + metrics.apiMetrics.successfulRequests as string + "\n"
+  report = report + "Failed: " + metrics.apiMetrics.failedRequests as string + "\n"
+  report = report + "Avg Latency: " + metrics.apiMetrics.avgLatencyMs as string + "ms\n"
+
+  report
+
+fn newDistributedMetrics() -> DistributedMetrics
+  {
+    "raftMetrics": {
+      "leaderElections": 0,
+      "logAppends": 0,
+      "snapshotsTaken": 0,
+      "avgCommitLatencyMs": 0.0,
+      "quorumSuccessRate": 1.0
+    },
+    "replicationMetrics": {
+      "quorumWrites": 0,
+      "quorumFailures": 0,
+      "failoversTriggered": 0,
+      "activeReplicas": 3
+    },
+    "shardingMetrics": {
+      "rebalancesTriggered": 0,
+      "migrationsCompleted": 0,
+      "balanceScore": 0.95,
+      "avgPartitionLoad": 0.5
+    },
+    "apiMetrics": {
+      "totalRequests": 0,
+      "successfulRequests": 0,
+      "failedRequests": 0,
+      "avgLatencyMs": 0.0
+    },
+    "timestamp": 1740998400
+  }
+
 fn toString(v: any) -> string
   ""
 

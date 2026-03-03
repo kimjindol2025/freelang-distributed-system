@@ -267,6 +267,111 @@ fn recordStreamEvent(
   server
 
 // ============================================================================
+// Stream Message Batching
+// ============================================================================
+
+fn batchInsertRequests(
+  server: VectorStreamServer,
+  requests: array<map<string, any>>
+) -> Result<map<string, any>, string>
+  var batchResults = []
+  var totalInserted = 0
+  var totalFailed = 0
+
+  for i = 0 to requests.length()
+    let request = requests[i]
+    let vectorId = request["vectorId"]
+    let vector = request["vector"]
+
+    // Simulate insert
+    let response = {
+      "vectorId": vectorId,
+      "status": "ok",
+      "nodeIds": ["node1", "node2", "node3"]
+    }
+
+    batchResults.append(response)
+    totalInserted = totalInserted + 1
+
+  server.stats["insertStreamed"] = (server.stats["insertStreamed"] as number) + totalInserted
+
+  Ok({
+    "status": "batch_complete",
+    "inserted": totalInserted,
+    "failed": totalFailed,
+    "timestamp": getCurrentTime()
+  })
+
+fn batchSearchRequests(
+  server: VectorStreamServer,
+  requests: array<map<string, any>>
+) -> Result<array<map<string, any>>, string>
+  var allResults = []
+
+  for i = 0 to requests.length()
+    let request = requests[i]
+    let query = request["query"]
+    let topK = request["topK"]
+
+    var results = []
+    for j = 0 to topK
+      results.append({
+        "queryIndex": i,
+        "vectorId": "vec_" + j as string,
+        "score": 0.95 - (j as f64 * 0.05)
+      })
+
+    allResults.append({
+      "queryIndex": i,
+      "results": results
+    })
+
+  server.stats["searchStreamed"] = (server.stats["searchStreamed"] as number) + requests.length()
+
+  Ok(allResults)
+
+// ============================================================================
+// Client State Management
+// ============================================================================
+
+fn registerStreamClient(
+  server: VectorStreamServer,
+  clientId: string,
+  path: string,
+  metadata: map<string, any>
+) -> Result<bool, string>
+  server.stats["totalConnections"] = (server.stats["totalConnections"] as number) + 1
+  server.stats["activeStreams"] = (server.stats["activeStreams"] as number) + 1
+
+  Ok(true)
+
+fn unregisterStreamClient(
+  server: VectorStreamServer,
+  clientId: string
+) -> Result<bool, string>
+  server.stats["activeStreams"] = (server.stats["activeStreams"] as number) - 1
+
+  Ok(true)
+
+// ============================================================================
+// Error Handling
+// ============================================================================
+
+fn handleStreamError(
+  server: VectorStreamServer,
+  clientId: string,
+  error: string
+) -> Result<map<string, any>, string>
+  let errorResponse = {
+    "type": "error",
+    "message": error,
+    "clientId": clientId,
+    "timestamp": getCurrentTime()
+  }
+
+  Ok(errorResponse)
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
